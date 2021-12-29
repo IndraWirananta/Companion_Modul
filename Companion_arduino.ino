@@ -1,9 +1,12 @@
+
+
 //Firebase Library for arduino/nodeMCU by K Suwatchai
 //Code by Indra Wirananta
 
 //Library
 //#include <WiFi.h>
 #include <WiFiUdp.h>
+//#include <ArduinoJson.h>//handle json parsing
 #include <NTPClient.h>//go get time from NTP
 #include <Firebase_ESP_Client.h> //For firebase related stuff
 #include <U8g2lib.h>// for i2c display used
@@ -26,13 +29,10 @@
 #define FIREBASE_PROJECT_ID "companion-d01bb"
 
 /* 4. Define the user Email and password that alreadey registerd or added in your project */
-#define USER_EMAIL "indra@indra.com"
-#define USER_PASSWORD "indraindra"
+#define USER_EMAIL "indrawiranantatest@gmail.com"
+#define USER_PASSWORD "indrawiranantatest"
 #define USER_UID "01ALOpn6oPSIPUdqlT1ZayrSB0y2"
-#define MODUL_NAME "sensor1"
-#define MODUL_GROUP "kandang"
-
-
+#define MODUL_NAME "sensorAnjing"
 
 #define dht_apin D7
 #define pirSensor D8
@@ -50,11 +50,10 @@ FirebaseConfig config;
 unsigned long dataMillis = 0;
 int count = 0;
 WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP, "pool.ntp.org", 3600 * 8);
+NTPClient timeClient(ntpUDP, "pool.ntp.org");
 
 void setup()
 {
-
   Serial.begin(115200);
 
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -85,8 +84,8 @@ void setup()
   Firebase.begin(&config, &auth);
   Firebase.reconnectWiFi(true);
   delay(1500);
-
 }
+
 
 void loop()
 {
@@ -114,41 +113,72 @@ void loop()
   u8g2.sendBuffer();
   delay(800);
 
-  if (Firebase.ready() && (millis() - dataMillis > 60000 || dataMillis == 0))//timer untuk mengirim data setiap 1 menit (60000 milisekon)
+  if (Firebase.ready() && (millis() - dataMillis > 60000 * 5 || dataMillis == 0)) //timer untuk mengirim data setiap 1 menit (60000 milisekon)
   {
     dataMillis = millis();
-    FirebaseJson content;
+    String documentPath = "users/" USER_UID "/sensor/" MODUL_NAME;
+    String field = "reading";
     std::vector<struct fb_esp_firestore_document_write_t> writes;
-    struct fb_esp_firestore_document_write_t update_write;
-    update_write.type = fb_esp_firestore_document_write_type_update;
+    struct fb_esp_firestore_document_write_t transform_write;
+    transform_write.type = fb_esp_firestore_document_write_type_transform;
+    transform_write.document_transform.transform_document_path = "users/" USER_UID "/sensor/" MODUL_NAME;
+    struct fb_esp_firestore_document_write_field_transforms_t field_transforms;
+    field_transforms.fieldPath = "reading";
+    field_transforms.transform_type = fb_esp_firestore_transform_type_append_missing_elements;
 
-    String documentPath = "users/" USER_UID "/sensor/" MODUL_GROUP "/"  MODUL_NAME  "/" + String(count);
+    FirebaseJson content;
+    //    if (Firebase.Firestore.getDocument(&fbdo, FIREBASE_PROJECT_ID, "", documentPath.c_str(), field.c_str())) {
+    //      FirebaseJson payload;
+    //      FirebaseJsonData result;
+    //
+    //      payload.setJsonData(fbdo.payload().c_str());
+    //      Serial.println(fbdo.payload().c_str());
+    //      payload.get(result, "fields/reading/arrayValue/values");
+    //
+    //      if (result.success) {
+    //        FirebaseJsonArray arr;
+    //        result.get<FirebaseJsonArray>(arr);
+    //
+    //        FirebaseJson newPayload;
+    //        newPayload.set("/mapValue/fields/humidity/integerValue", humidity);
+    //        newPayload.set("/mapValue/fields/temperature/integerValue", temperature);
+    //        newPayload.set("/mapValue/fields/motionSensor/integerValue", motionSensor);
+    //        newPayload.set("/mapValue/fields/timestamp/integerValue", timestamp);
+    //        arr.add(newPayload);
+    //
+    //        arr.toString(Serial, true);
+    //        FirebaseJsonData result2;
+    //        for (size_t i = 0; i < arr.size(); i++) {
+    //          arr.get(result2, i);
+    //          Serial.println(result2.to<String>().c_str());
+    //        }
+    //        content.set("values", arr);
+    //      }else{
+    //         Serial.println("Failed to query reading fields");
+    //        }
+    //    }
+    //    else
+    //      Serial.println(fbdo.errorReason());
+    
+    FirebaseJson newPayload;
+    newPayload.set("/mapValue/fields/humidity/integerValue", humidity);
+    newPayload.set("/mapValue/fields/temperature/integerValue", temperature);
+    newPayload.set("/mapValue/fields/motionSensor/integerValue", motionSensor);
+    newPayload.set("/mapValue/fields/timestamp/integerValue", timestamp);
+    
+    content.set("values", newPayload);
+    
+    field_transforms.transform_content = content.raw();
+    transform_write.document_transform.field_transforms.push_back(field_transforms);
+    writes.push_back(transform_write);
 
-    //Timestamp
-    content.set("fields/timestamp/integerValue", timestamp);
-
-    //Temperature Sensor
-    content.set("fields/temperature/doubleValue", temperature);
-
-    //Humidity Sensor
-    content.set("fields/humidity/doubleValue", humidity);
-
-    //Motion Sensor
-    content.set("fields/motionSensor/integerValue", motionSensor);
-
-    update_write.update_document_content = content.raw();
-    update_write.update_document_path = documentPath.c_str();
-    writes.push_back(update_write);
 
     if (Firebase.Firestore.commitDocument(&fbdo, FIREBASE_PROJECT_ID, "" /* databaseId can be (default) or empty */, writes /* dynamic array of fb_esp_firestore_document_write_t */, "" /* transaction */))
-      //    if (Firebase.Firestore.createDocument(&fbdo, FIREBASE_PROJECT_ID, "", documentPath.c_str(), content.raw()))
       Serial.println("data sent succesfully");
     else
       Serial.println(fbdo.errorReason());
 
-    count++;
-    if (count > 2880) {
-      count = 0;
-    }
+
+
   }
 }
